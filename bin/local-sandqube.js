@@ -16,8 +16,8 @@ Usage:
   local-sandqube create-blueprint SITE_DIRECTORY BLUEPRINT_NAME [--root PATH]
 
 Commands:
-  setup             Configure Nginx for independent WordPress folders.
-  create-site    Create a site from a blueprint (default: wp).
+  setup             Configure Nginx and prepare the default blueprint.
+  create-site       Create a site from a blueprint (default: default).
   create-blueprint  Capture an existing site's files and database.
 
 Options:
@@ -26,7 +26,7 @@ Options:
   --help, -h           Show help, including command-specific help.
   --version, -v        Show the package version.
 
-Examples (after publishing the package):
+Examples:
   npx local-sandqube setup
   npx local-sandqube create-site my_project
   npx local-sandqube create-site another_project my-template --root "/path/to/local-site"
@@ -37,18 +37,20 @@ Blueprints live in ROOT/local-sandqube/blueprints, never in the npx cache.
 
 const details = {
   setup: `setup [ROOT] [--dry-run] [--root PATH]
+Downloads WordPress and prepares default/site/wp-config.php when default is absent.
+Existing default blueprints are preserved. --dry-run previews without downloading.
 Backs up and replaces three Nginx templates. Stop and start the site in Local
 after applying. PHP, Mailpit, databases, and WordPress files are preserved.
 ROOT is optional; --root is supported before or after the command.`,
   'create-site': `create-site DATABASE_NAME [BLUEPRINT] [--root PATH]
 DATABASE_NAME: required; normalized to lowercase a-z, 0-9, underscores; max 64.
-BLUEPRINT: optional exact directory name in ROOT/local-sandqube/blueprints; default wp.
+BLUEPRINT: optional exact directory name in ROOT/local-sandqube/blueprints; defaults to "default".
 Underscores become dashes in the new folder, email domain, and HTTPS URL path.
 Defaults: title-cased database name, admin / 123, admin@normalized-name.com,
 and search engine indexing enabled. Existing databases and folders are rejected.
 Imports BLUEPRINT/db/db.sql when present and migrates old URLs, including serialized data.
-Otherwise installs a fresh database. A missing default wp blueprint is downloaded
-from official WordPress core, matching the parent site's WordPress version.
+Otherwise installs a fresh database. Run setup first to prepare the default
+blueprint from official WordPress core, matching the parent site's version.
 Start Local first and run setup once, then restart Local to activate routing.`,
   'create-blueprint': `create-blueprint SITE_DIRECTORY BLUEPRINT_NAME [--root PATH]
 Both names are required, used exactly as provided, and must be single directory names.

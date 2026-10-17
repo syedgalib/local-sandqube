@@ -9,6 +9,8 @@ import { parse } from '../bin/local-sandqube.js';
 import { databaseName, component, exists, resources, copyContents } from '../lib/runtime.js';
 import { settings, validateDump } from '../lib/site.js';
 import { setup, templateFiles } from '../lib/setup.js';
+import { ensureDefaultBlueprint } from '../lib/default-blueprint.js';
+import { createSite } from '../lib/site.js';
 
 const cli = fileURLToPath(new URL('../bin/local-sandqube.js', import.meta.url));
 const fixture = async (t) => {
@@ -66,10 +68,12 @@ test('setup dry run leaves the root unchanged and does not require WordPress too
   await setup(root, { dryRun: true });
   assert.deepEqual(await fs.readFile(path.join(root, 'conf/nginx/nginx.conf.hbs')), before);
   assert.equal(await exists(path.join(root, 'conf/nginx-backups')), false);
+  assert.equal(await exists(path.join(root, 'local-sandqube')), false);
 });
 
 test('setup installs exact templates with backups, preserves modes, and is idempotent', async (t) => {
   const root = await fixture(t);
+  await fs.mkdir(path.join(root, 'local-sandqube/blueprints/default'), { recursive: true });
   await setup(root);
   const backupParent = path.join(root, 'conf/nginx-backups');
   const [backup] = await fs.readdir(backupParent);
@@ -84,6 +88,7 @@ test('setup installs exact templates with backups, preserves modes, and is idemp
 
 test('partial setup failure restores original files', async (t) => {
   const root = await fixture(t);
+  await fs.mkdir(path.join(root, 'local-sandqube/blueprints/default'), { recursive: true });
   const rename = fs.rename.bind(fs);
   let calls = 0;
   t.mock.method(fs, 'rename', async (...args) => {
@@ -101,6 +106,75 @@ test('setup refuses template symlinks', async (t) => {
   await fs.unlink(template);
   await fs.symlink('nginx.conf.hbs', template);
   await assert.rejects(setup(root), /symlink/);
+});
+
+async function blueprintContext(root, calls, failAt) {
+  await fs.writeFile(path.join(root, 'app/public/wp-config.php'), '<?php');
+  return {
+    async wp(site, args) {
+      calls.push({ site, args });
+      if (args.slice(0, 2).join(' ') === failAt) throw new Error('Simulated blueprint failure');
+      if (args[0] === 'core' && args[1] === 'version') return '6.8.3';
+      if (args[0] === 'config' && args[1] === 'get') {
+        return { DB_USER: 'local-user', DB_PASSWORD: 'local-password', DB_HOST: 'localhost:12345' }[args[2]];
+      }
+      if (args[0] === 'core' && args[1] === 'download') {
+        await fs.mkdir(path.join(site, 'wp-admin'), { recursive: true });
+        await fs.mkdir(path.join(site, 'wp-includes'));
+        await fs.mkdir(path.join(site, 'wp-content'));
+        for (const file of ['index.php', 'wp-load.php', 'wp-settings.php', 'wp-admin/install.php', 'wp-includes/version.php']) {
+          await fs.writeFile(path.join(site, file), '<?php');
+        }
+      }
+      if (args[0] === 'config' && args[1] === 'create') await fs.writeFile(path.join(site, 'wp-config.php'), '<?php // generated');
+    },
+    async dispose() { calls.push({ disposed: true }); },
+  };
+}
+
+test('default blueprint downloads matching core and prepares config without creating a database', async (t) => {
+  const root = await fixture(t);
+  const calls = [];
+  const ctx = await blueprintContext(root, calls);
+  await ensureDefaultBlueprint(root, { createContext: async () => ctx });
+  const site = path.join(root, 'local-sandqube/blueprints/default/site');
+  assert.equal(await exists(path.join(site, 'wp-config.php')), true);
+  assert.deepEqual(calls.find(({ args }) => args?.[1] === 'download'), {
+    site, args: ['core', 'download', '--version=6.8.3'],
+  });
+  assert.deepEqual(calls.find(({ args }) => args?.[1] === 'create').args, [
+    'config', 'create', '--dbname=default', '--dbuser=local-user', '--dbpass=local-password',
+    '--dbhost=localhost:12345', '--skip-check', '--skip-salts',
+  ]);
+  assert.equal(calls.some(({ args }) => args?.[0] === 'db'), false);
+  assert.equal(calls.at(-1).disposed, true);
+  await fs.writeFile(path.join(site, 'custom.txt'), 'preserve me');
+  await ensureDefaultBlueprint(root, { createContext: () => { throw new Error('Must not require tools on repeat'); } });
+  assert.equal(await fs.readFile(path.join(site, 'custom.txt'), 'utf8'), 'preserve me');
+});
+
+test('failed download or config preparation removes the incomplete default and allows retry', async (t) => {
+  for (const failAt of ['core download', 'config create', 'config set']) {
+    const root = await fixture(t);
+    const calls = [];
+    const ctx = await blueprintContext(root, calls, failAt);
+    await assert.rejects(ensureDefaultBlueprint(root, { createContext: async () => ctx }), /Simulated blueprint failure/);
+    assert.equal(await exists(path.join(root, 'local-sandqube/blueprints/default')), false);
+    assert.equal(calls.at(-1).disposed, true);
+    await ensureDefaultBlueprint(root, { createContext: async () => blueprintContext(root, []) });
+    assert.equal(await exists(path.join(root, 'local-sandqube/blueprints/default/site/wp-config.php')), true);
+  }
+});
+
+test('already configured setup still previews a missing default and create-site directs users to setup', async (t) => {
+  const root = await fixture(t);
+  for (const file of templateFiles) await fs.copyFile(path.join(resources, 'nginx', file), path.join(root, 'conf/nginx', file));
+  const result = spawnSync(process.execPath, [cli, 'setup', '--dry-run', '--root', root], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Create blueprint: .*blueprints\/default/);
+  assert.equal(await exists(path.join(root, 'local-sandqube')), false);
+  await fs.writeFile(path.join(root, 'app/public/wp-config.php'), '<?php');
+  await assert.rejects(createSite(root, 'new_site'), /Blueprint not found: .*blueprints\/default.*setup/);
 });
 
 test('site files copy into an exclusively reserved folder, including hidden files, without replacing existing files', async (t) => {
