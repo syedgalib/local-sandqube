@@ -1,0 +1,4 @@
+interface:
+  display_name: "Local Sandqube"
+  short_description: "Manage local WordPress sites and reusable blueprints"
+  default_prompt: "Use $local-sandqube to set up a Local environment, create a WordPress site, or capture a blueprint."

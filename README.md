@@ -59,6 +59,8 @@ local-sandqube --help
 ## Choosing a Local site
 
 **Every command defaults to the current terminal directory (`process.cwd()`).**
+For `install-skill`, this selects the project where the skill is installed; the
+WordPress commands require a Local site root.
 The npm installation directory, npx cache, and location of the executable are
 never used as the default Local root.
 
@@ -86,6 +88,8 @@ and `create-blueprint`, use `--root` to distinguish the root from blueprint name
 
 | Command | Purpose |
 | --- | --- |
+| `install-skill AGENT [--root PATH]` | Install the bundled skill for `codex` or `claude` in a project. |
+| `help [COMMAND]` | Show general or command-specific help. |
 | `setup [ROOT] [--dry-run] [--root PATH]` | Configure Nginx and prepare the default WordPress blueprint. |
 | `create-site DATABASE_NAME [BLUEPRINT] [--root PATH]` | Create a site from a blueprint, importing SQL when present. |
 | `create-blueprint SITE_DIRECTORY BLUEPRINT_NAME [--root PATH]` | Save an existing site's files and database as a unique blueprint. |
@@ -120,6 +124,40 @@ independent of the CLI installation and npx cache. User blueprints,
 configurations, uploads, and SQL dumps are excluded from the npm package.
 
 ## Command reference
+
+### install-skill
+
+Install the bundled Local Sandqube skill for your coding agent:
+
+```sh
+npx local-sandqube install-skill codex
+npx local-sandqube install-skill claude
+npx local-sandqube install-skill codex --root "/path/to/local-site"
+```
+
+The required `AGENT` argument accepts only `codex` or `claude`, in lowercase.
+Installation defaults to the current terminal directory, or the directory selected
+with `--root`. This command works in any existing project directory and does not
+require a Local site layout, running services, PHP, or WP-CLI.
+
+| Agent | Installed location under the selected directory | Invocation |
+| --- | --- | --- |
+| `codex` | `.agents/skills/local-sandqube/` | `$local-sandqube` |
+| `claude` | `.claude/skills/local-sandqube/` | `/local-sandqube` |
+
+Both agents receive the same `SKILL.md`; Codex also receives `agents/openai.yaml`
+for its UI metadata. The source is maintained in `resources/skills/local-sandqube`
+and included in the npm package. Installation copies the files into the project,
+so the skill remains available independently of the npx cache.
+
+Repeated installs skip identical files. Changed existing files are backed up under
+`.agents/skill-backups/` or `.claude/skill-backups/` before replacement. Additional
+files in an existing skill directory are preserved. The installer rejects symbolic
+links in the destination paths. Start a new agent session if discovery does not
+pick up the installed skill.
+
+For example, ask Codex `$local-sandqube create a site named my_project`, or ask
+Claude `/local-sandqube create a site named my_project`.
 
 ### setup
 
@@ -307,6 +345,9 @@ installation; open the subsite URLs directly.
 ## Help
 
 ```sh
+npx local-sandqube help
+npx local-sandqube help install-skill
+npx local-sandqube install-skill --help
 npx local-sandqube --help
 npx local-sandqube setup --help
 npx local-sandqube create-site --help
@@ -337,11 +378,11 @@ To run the tarball against a Local site:
 
 ```sh
 cd "/path/to/local-site"
-npx --yes --package=/path/to/local-sandqube-0.1.1.tgz local-sandqube --help
+npx --yes --package=/path/to/local-sandqube-0.2.0.tgz local-sandqube --help
 ```
 
-The npm package includes the CLI source, Nginx templates, PHP helpers, metadata,
-and this README. It excludes site files, blueprints, and database dumps.
+The npm package includes the CLI source, Nginx templates, PHP helpers, agent
+skills, metadata, and this README. It excludes site files, blueprints, and database dumps.
 
 ## License
 

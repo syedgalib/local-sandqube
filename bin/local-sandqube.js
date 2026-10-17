@@ -2,31 +2,38 @@
 import path from 'node:path';
 import { readFile, realpath } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { rootPath } from '../lib/runtime.js';
+import { rootPath, directory } from '../lib/runtime.js';
 import { setup } from '../lib/setup.js';
 import { createSite } from '../lib/site.js';
 import { createBlueprint } from '../lib/blueprint.js';
+import { installSkill, agentTypes } from '../lib/install-skill.js';
 
 const version = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const usage = `Local Sandqube ${version}
 
 Usage:
+  local-sandqube help [COMMAND]
+  local-sandqube install-skill AGENT [--root PATH]
   local-sandqube setup [ROOT] [--dry-run] [--root PATH]
   local-sandqube create-site DATABASE_NAME [BLUEPRINT] [--root PATH]
   local-sandqube create-blueprint SITE_DIRECTORY BLUEPRINT_NAME [--root PATH]
 
 Commands:
+  help              Show general or command-specific help.
+  install-skill     Install the bundled skill for codex or claude.
   setup             Configure Nginx and prepare the default blueprint.
   create-site       Create a site from a blueprint (default: default).
   create-blueprint  Capture an existing site's files and database.
 
 Options:
-  --root PATH, -r PATH  Local site root; defaults to the current terminal directory.
+  --root PATH, -r PATH  Target root; defaults to the current terminal directory.
   --dry-run            Preview setup changes without modifying the site.
   --help, -h           Show help, including command-specific help.
   --version, -v        Show the package version.
 
 Examples:
+  npx local-sandqube install-skill codex
+  npx local-sandqube install-skill claude --root "/path/to/local-site"
   npx local-sandqube setup
   npx local-sandqube create-site my_project
   npx local-sandqube create-site another_project my-template --root "/path/to/local-site"
@@ -36,6 +43,15 @@ Blueprints live in ROOT/local-sandqube/blueprints, never in the npx cache.
 `;
 
 const details = {
+  'install-skill': `install-skill AGENT [--root PATH]
+AGENT: required; accepted values: codex, claude (case-sensitive).
+Installs the bundled Local Sandqube skill in the selected project directory:
+  codex   .agents/skills/local-sandqube (includes Codex UI metadata)
+  claude  .claude/skills/local-sandqube
+Defaults to the current terminal directory; use --root PATH to select another directory.
+Does not require a Local site layout, running Local services, PHP, or WP-CLI. Identical files are skipped.
+Changed existing files are backed up under the agent's skill-backups directory.
+Start a new agent session if the installed skill is not discovered.`,
   setup: `setup [ROOT] [--dry-run] [--root PATH]
 Downloads WordPress and prepares default/site/wp-config.php when default is absent.
 Existing default blueprints are preserved. --dry-run previews without downloading.
@@ -62,6 +78,7 @@ Start Local first. Quote names containing spaces.`,
 };
 
 export function parse(argv, cwd = process.cwd()) {
+  if (argv[0] === 'help') argv = [...argv.slice(1), '--help'];
   let command;
   let root;
   let dryRun = false;
@@ -90,9 +107,10 @@ export function parse(argv, cwd = process.cwd()) {
   if (command && !Object.hasOwn(details, command)) throw new Error(`Unknown command: ${command}`);
   if (help || showVersion || !command) return { command, help: help || !command, showVersion };
   if (dryRun && command !== 'setup') throw new Error('--dry-run is only supported by setup.');
-  const maximum = command === 'setup' ? 1 : 2;
-  const minimum = command === 'setup' ? 0 : command === 'create-site' ? 1 : 2;
+  const maximum = ['setup', 'install-skill'].includes(command) ? 1 : 2;
+  const minimum = command === 'setup' ? 0 : ['create-site', 'install-skill'].includes(command) ? 1 : 2;
   if (args.length < minimum || args.length > maximum) throw new Error(`Usage: local-sandqube ${details[command].split('\n')[0]}`);
+  if (command === 'install-skill' && !agentTypes.includes(args[0])) throw new Error('Agent must be codex or claude.');
   if (command === 'setup' && args.length) {
     if (root !== undefined) throw new Error('Use either setup ROOT or --root PATH, not both.');
     root = args.shift();
@@ -105,6 +123,12 @@ export async function main(argv = process.argv.slice(2)) {
   if (options.showVersion) { console.log(version); return; }
   if (options.help) {
     console.log(options.command ? `Usage: local-sandqube ${details[options.command]}\n` : usage);
+    return;
+  }
+  if (options.command === 'install-skill') {
+    const root = await realpath(options.root);
+    await directory(root);
+    await installSkill(root, ...options.args);
     return;
   }
   const root = await rootPath(options.root);
