@@ -1,55 +1,48 @@
 # Local Sandqube
 
-A dependency-free Node.js CLI for independent WordPress installations inside a
-Local environment. Configure Nginx, create subsites, and capture reusable
-blueprints containing WordPress files and a SQL export.
+Create independent WordPress sites inside a single [Local](https://localwp.com/)
+environment. Each site gets its own folder and database while sharing Local's
+Nginx, PHP, MySQL, and Mailpit services.
 
-**Package status:** prepared for npm publishing, but not published. The short
-`npx local-sandqube` commands below become available after publication. You can
-run and test the local package now using the commands in the next section.
+- Configure Nginx to serve WordPress installations in subdirectories.
+- Create sites from WordPress files or blueprints with database exports.
+- Capture existing sites as reusable blueprints.
+- Migrate imported URLs, including serialized WordPress data.
 
-## Run the package
+## Usage
 
-### Before publishing
-
-From the Local site's root, using this checkout:
-
-```sh
-npx --yes --package=./local-sandqube local-sandqube --help
-npx --yes --package=./local-sandqube local-sandqube setup
-```
-
-Or run Node directly, without npm installing anything:
+Run with npx from your Local site's root directory—the folder containing
+`app/` and `conf/`:
 
 ```sh
-node local-sandqube/bin/local-sandqube.js setup
-node local-sandqube/bin/local-sandqube.js create-site my_project
-node local-sandqube/bin/local-sandqube.js create-blueprint my-project my-template
-```
-
-You can also run the CLI from an npm tarball:
-
-```sh
-# In the package directory:
-npm pack
-
-# From a Local site's root; substitute the actual tarball path:
-npx --yes --package=/path/to/local-sandqube-0.1.0.tgz local-sandqube setup
-```
-
-### After publishing
-
-```sh
+cd "/path/to/local-site"
 npx local-sandqube setup
-npx local-sandqube create-site my_project
-npx local-sandqube create-blueprint my-project my-template
 ```
 
-`npx` fetches and caches the package when needed; it avoids a manual repository
-copy or global installation. It does not eliminate downloading the executable
-package. It does not download Local, PHP, MySQL, or WP-CLI.
+Stop and start the site in Local to activate the Nginx configuration, then create
+a site:
 
-## Prerequisites
+```sh
+npx local-sandqube create-site my_project
+```
+
+For a parent site at `https://example.local`, the new site will be available at
+`https://example.local/my-project` with administrator credentials `admin` / `123`.
+These defaults are intended for local development.
+
+## Installation
+
+No global installation is required. npx downloads and caches the npm package
+when needed. Local and its PHP, MySQL, and WP-CLI tools must already be available.
+
+If you prefer a global command:
+
+```sh
+npm install --global local-sandqube
+local-sandqube --help
+```
+
+## Requirements
 
 - Node.js **22 or newer**, with npm/npx, on macOS or Linux.
 - A Local environment using **Nginx** and a normal single-site WordPress root
@@ -63,9 +56,7 @@ package. It does not download Local, PHP, MySQL, or WP-CLI.
 - Run `setup` once and stop/start the Local site before creating subsites.
   Use Local's SSL controls to trust its certificate for HTTPS URLs.
 
-No npm dependencies need to be installed for development or direct Node usage.
-
-## Selecting the Local site root
+## Choosing a Local site
 
 **Every command defaults to the current terminal directory (`process.cwd()`).**
 The npm installation directory, npx cache, and location of the executable are
@@ -74,9 +65,9 @@ never used as the default Local root.
 Run from a Local site root containing `app/` and `conf/`, or pass `--root PATH`:
 
 ```sh
-npx local-sandqube setup --root "/Users/personal/Local Sites/sandbox"
-npx local-sandqube create-site my_project --root "/Users/personal/Local Sites/sandbox"
-npx local-sandqube create-blueprint my-project my-template --root "/Users/personal/Local Sites/sandbox"
+npx local-sandqube setup --root "/path/to/local-site"
+npx local-sandqube create-site my_project --root "/path/to/local-site"
+npx local-sandqube create-blueprint my-project my-template --root "/path/to/local-site"
 ```
 
 `--root` works before or after the command; `-r` is an alias. Relative paths are
@@ -84,14 +75,14 @@ resolved against the current terminal directory. `setup` additionally accepts
 its root as an optional positional argument:
 
 ```sh
-npx local-sandqube setup "/Users/personal/Local Sites/sandbox"
+npx local-sandqube setup "/path/to/local-site"
 npx local-sandqube --root ../sandbox create-site my_project my-template
 ```
 
 Do not supply both a positional setup root and `--root`. For `create-site`
 and `create-blueprint`, use `--root` to distinguish the root from blueprint names.
 
-## Commands at a glance
+## Commands
 
 | Command | Purpose |
 | --- | --- |
@@ -102,7 +93,7 @@ and `create-blueprint`, use `--root` to distinguish the root from blueprint name
 Arguments in brackets are optional. All commands support `--help` and `-h`.
 `--version` and `-v` show the package version.
 
-## Data layout
+## Blueprint storage
 
 Blueprints always belong to the **selected Local site**, separate from the
 installed/cached CLI package:
@@ -124,13 +115,13 @@ SITE_ROOT/
             └── db/db.sql            # Optional SQL dump
 ```
 
-The CLI source directory contains no existing user blueprints. Those are kept
-with the standalone shell version in `local-sandqube-sh/blueprints`, and the
-CLI does not share them automatically. When you later run the CLI, it creates
-its own blueprint storage under the selected root as needed. User blueprints,
+Blueprint storage is created under the selected Local site as needed. It is
+independent of the CLI installation and npx cache. User blueprints,
 configurations, uploads, and SQL dumps are excluded from the npm package.
 
-## 1. Configure Nginx
+## Command reference
+
+### setup
 
 ```sh
 npx local-sandqube setup
@@ -159,7 +150,7 @@ PHP, Mailpit, WordPress files, and database contents are preserved.
 To undo a change, restore the three files from the printed backup directory to
 `conf/nginx`, preserving its `includes` subdirectory, and restart the Local site.
 
-## 2. Create a subsite
+### create-site
 
 ```sh
 npx local-sandqube create-site My_Project
@@ -190,14 +181,14 @@ Database credentials come from the parent configuration. The new configuration
 gets fresh authentication salts, its own database name, and environment type
 `local`. Existing databases and destination folders are never overwritten.
 
-### Default blueprint on a new environment
+#### Default blueprint
 
 If `wp` is absent, the CLI downloads official WordPress core matching the parent
 installation's version into `ROOT/local-sandqube/blueprints/wp/site`. This first
 use needs internet access and Local's WP-CLI. Existing `wp` blueprints are
 preserved. A missing custom blueprint is an error; it is not downloaded.
 
-### Custom blueprints and SQL imports
+#### Custom blueprints and SQL imports
 
 A blueprint must contain a full WordPress installation in `site/`, with
 `wp-config.php` or `wp-config-sample.php`. Quote names with spaces:
@@ -230,7 +221,7 @@ run. Installation and administrator-change notification emails are skipped.
 Failures trigger cleanup of only the newly created database and folder; a
 failed database cleanup is reported for manual recovery.
 
-## 3. Create a blueprint
+### create-blueprint
 
 ```sh
 npx local-sandqube create-blueprint my-project my-template
@@ -275,9 +266,6 @@ npx local-sandqube create-site second_project my-template
 4. Run `npx local-sandqube create-blueprint demo-project demo-template`.
 5. Run `npx local-sandqube create-site second_project demo-template`.
 
-Before publishing, substitute `node local-sandqube/bin/local-sandqube.js` or the
-local `npx --package=...` form for `npx local-sandqube` in these examples.
-
 ## Mailpit and Local controls
 
 Subsites share the selected environment's PHP service and Mailpit inbox. Standard
@@ -286,48 +274,58 @@ Local to inspect messages. An SMTP or email API plugin may use another transport
 Local's Open Site, WP Admin, and one-click login controls target the parent
 installation; open the subsite URLs directly.
 
-## Development and packaging
-
-From the package directory:
-
-```sh
-npm test
-npm pack --dry-run
-npm pack
-```
-
-The package contains only the CLI, Nginx templates, PHP helpers, metadata, and
-this README. No user blueprint files or database dumps are distributed.
-The standalone shell version is maintained separately in
-[`../local-sandqube-sh`](../local-sandqube-sh/README.md); it does not require Node.js.
-
-The current package license is `UNLICENSED`; choose the intended license and
-confirm the npm package name before publishing. Publishing is a separate step
-and has not been performed. After reviewing the tarball and signing into your
-npm account, a future release can be published from this directory:
-
-```sh
-npm publish
-```
-
-## Help and troubleshooting
-
-```sh
-npx local-sandqube --help
-npx local-sandqube create-site --help
-npx local-sandqube create-blueprint --help
-npx local-sandqube setup --help
-npx local-sandqube --version
-```
+## Troubleshooting
 
 | Problem | Action |
 | --- | --- |
-| Bare `npx local-sandqube` is unavailable before publishing | Use the local package, tarball, or direct Node invocation above. |
 | Not a Local site root | Run from the folder containing `app/` and `conf/`, or pass `--root PATH`. |
 | Missing PHP, WP-CLI, MySQL, or mysqldump | Start the selected Local site and use its Site shell, or check `app/.envrc`. |
 | Database unavailable | Check that Local is running and the source configuration uses the correct database. |
 | Existing database, folder, or blueprint | Choose a new name; these resources are not overwritten. |
 | Missing custom blueprint | Capture one using `create-blueprint`, or prepare its `site/` directory. |
 | Invalid dump or table prefix | Export a matching single-site blueprint with `create-blueprint`. |
-| Unexpected subsite 404s | Run `setup`, then stop and start the selected Local site. |
+| Subdirectory URLs return 404 | Run `setup`, then stop and start the selected Local site. |
 | HTTPS is untrusted | Trust the environment's certificate using Local's SSL controls. |
+
+## Help
+
+```sh
+npx local-sandqube --help
+npx local-sandqube setup --help
+npx local-sandqube create-site --help
+npx local-sandqube create-blueprint --help
+npx local-sandqube --version
+```
+
+## Development
+
+The CLI uses Node.js built-in modules and has no npm dependencies. From a source
+checkout, run:
+
+```sh
+node bin/local-sandqube.js --help
+node bin/local-sandqube.js setup --root "/path/to/local-site"
+node bin/local-sandqube.js create-site my_project --root "/path/to/local-site"
+npm test
+```
+
+Preview the package contents or create an installable tarball:
+
+```sh
+npm pack --dry-run
+npm pack
+```
+
+To run the tarball against a Local site:
+
+```sh
+cd "/path/to/local-site"
+npx --yes --package=/path/to/local-sandqube-0.1.0.tgz local-sandqube --help
+```
+
+The npm package includes the CLI source, Nginx templates, PHP helpers, metadata,
+and this README. It excludes site files, blueprints, and database dumps.
+
+## License
+
+UNLICENSED. No open-source license is currently granted.
