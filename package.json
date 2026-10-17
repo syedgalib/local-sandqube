@@ -1,0 +1,23 @@
+{
+  "name": "local-sandqube",
+  "version": "0.1.0",
+  "description": "Independent WordPress sites and reusable blueprints for Local environments",
+  "type": "module",
+  "bin": {
+    "local-sandqube": "bin/local-sandqube.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "resources/"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "start": "node bin/local-sandqube.js"
+  },
+  "license": "UNLICENSED",
+  "keywords": ["wordpress", "local", "localwp", "blueprints", "cli"]
+}

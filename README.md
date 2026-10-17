@@ -1,0 +1,333 @@
+# Local Sandqube
+
+A dependency-free Node.js CLI for independent WordPress installations inside a
+Local environment. Configure Nginx, create subsites, and capture reusable
+blueprints containing WordPress files and a SQL export.
+
+**Package status:** prepared for npm publishing, but not published. The short
+`npx local-sandqube` commands below become available after publication. You can
+run and test the local package now using the commands in the next section.
+
+## Run the package
+
+### Before publishing
+
+From the Local site's root, using this checkout:
+
+```sh
+npx --yes --package=./local-sandqube local-sandqube --help
+npx --yes --package=./local-sandqube local-sandqube setup
+```
+
+Or run Node directly, without npm installing anything:
+
+```sh
+node local-sandqube/bin/local-sandqube.js setup
+node local-sandqube/bin/local-sandqube.js create-site my_project
+node local-sandqube/bin/local-sandqube.js create-blueprint my-project my-template
+```
+
+You can also run the CLI from an npm tarball:
+
+```sh
+# In the package directory:
+npm pack
+
+# From a Local site's root; substitute the actual tarball path:
+npx --yes --package=/path/to/local-sandqube-0.1.0.tgz local-sandqube setup
+```
+
+### After publishing
+
+```sh
+npx local-sandqube setup
+npx local-sandqube create-site my_project
+npx local-sandqube create-blueprint my-project my-template
+```
+
+`npx` fetches and caches the package when needed; it avoids a manual repository
+copy or global installation. It does not eliminate downloading the executable
+package. It does not download Local, PHP, MySQL, or WP-CLI.
+
+## Prerequisites
+
+- Node.js **22 or newer**, with npm/npx, on macOS or Linux.
+- A Local environment using **Nginx** and a normal single-site WordPress root
+  installation. WordPress Multisite networks are not supported.
+- The Local site must be running for site creation and blueprint capture.
+- Local's `php` and `wp`; `mysql` for SQL imports; `mysqldump` for blueprint
+  exports. The CLI reads the selected root's `app/.envrc` if present. Otherwise,
+  run from Local's **Site shell**.
+- Write access to the selected site. Its parent database user needs database
+  creation privileges and permission to remove a new database if setup fails.
+- Run `setup` once and stop/start the Local site before creating subsites.
+  Use Local's SSL controls to trust its certificate for HTTPS URLs.
+
+No npm dependencies need to be installed for development or direct Node usage.
+
+## Selecting the Local site root
+
+**Every command defaults to the current terminal directory (`process.cwd()`).**
+The npm installation directory, npx cache, and location of the executable are
+never used as the default Local root.
+
+Run from a Local site root containing `app/` and `conf/`, or pass `--root PATH`:
+
+```sh
+npx local-sandqube setup --root "/Users/personal/Local Sites/sandbox"
+npx local-sandqube create-site my_project --root "/Users/personal/Local Sites/sandbox"
+npx local-sandqube create-blueprint my-project my-template --root "/Users/personal/Local Sites/sandbox"
+```
+
+`--root` works before or after the command; `-r` is an alias. Relative paths are
+resolved against the current terminal directory. `setup` additionally accepts
+its root as an optional positional argument:
+
+```sh
+npx local-sandqube setup "/Users/personal/Local Sites/sandbox"
+npx local-sandqube --root ../sandbox create-site my_project my-template
+```
+
+Do not supply both a positional setup root and `--root`. For `create-site`
+and `create-blueprint`, use `--root` to distinguish the root from blueprint names.
+
+## Commands at a glance
+
+| Command | Purpose |
+| --- | --- |
+| `setup [ROOT] [--dry-run] [--root PATH]` | Configure Nginx for independent WordPress folders. |
+| `create-site DATABASE_NAME [BLUEPRINT] [--root PATH]` | Create a site from a blueprint, importing SQL when present. |
+| `create-blueprint SITE_DIRECTORY BLUEPRINT_NAME [--root PATH]` | Save an existing site's files and database as a unique blueprint. |
+
+Arguments in brackets are optional. All commands support `--help` and `-h`.
+`--version` and `-v` show the package version.
+
+## Data layout
+
+Blueprints always belong to the **selected Local site**, separate from the
+installed/cached CLI package:
+
+```text
+SITE_ROOT/
+├── app/
+│   ├── .envrc
+│   └── public/
+│       ├── wp-config.php            # Parent installation
+│       └── my-project/              # Independent child installation
+├── conf/
+└── local-sandqube/
+    └── blueprints/
+        ├── wp/
+        │   └── site/                # Full WordPress installation
+        └── my-template/
+            ├── site/
+            └── db/db.sql            # Optional SQL dump
+```
+
+The CLI source directory contains no existing user blueprints. Those are kept
+with the standalone shell version in `local-sandqube-sh/blueprints`, and the
+CLI does not share them automatically. When you later run the CLI, it creates
+its own blueprint storage under the selected root as needed. User blueprints,
+configurations, uploads, and SQL dumps are excluded from the npm package.
+
+## 1. Configure Nginx
+
+```sh
+npx local-sandqube setup
+```
+
+**Stop and start the site in Local afterward** to regenerate the running
+configuration. Adding another subsite later does not require a restart.
+
+Previewing is optional; you do not need to run two commands:
+
+```sh
+npx local-sandqube setup --dry-run
+```
+
+The command replaces these three templates, including their customizations:
+
+- `conf/nginx/nginx.conf.hbs`
+- `conf/nginx/site.conf.hbs`
+- `conf/nginx/includes/wordpress-single.conf.hbs`
+
+Originals are backed up under `conf/nginx-backups/<timestamp>-<unique-suffix>/`.
+The backup location is printed. Repeated runs do nothing when the templates
+already match. On a partial failure, modified files are restored where possible.
+PHP, Mailpit, WordPress files, and database contents are preserved.
+
+To undo a change, restore the three files from the printed backup directory to
+`conf/nginx`, preserving its `includes` subdirectory, and restart the Local site.
+
+## 2. Create a subsite
+
+```sh
+npx local-sandqube create-site My_Project
+npx local-sandqube create-site another_project my-template
+```
+
+| Argument | Required? | Meaning |
+| --- | --- | --- |
+| `DATABASE_NAME` | Yes | ASCII letters, digits, and underscores; normalized to lowercase; maximum 64 characters. |
+| `BLUEPRINT` | No | Exact directory name in this root's blueprint storage. Defaults to `wp`. |
+| `--root PATH` | No | Target Local site; otherwise the current terminal directory. |
+
+For `My_Project`, with parent home URL `https://sandbox.local`:
+
+| Setting | Value |
+| --- | --- |
+| Database | `my_project` |
+| Folder | `app/public/my-project` |
+| Site title | `My Project` |
+| Site and WordPress URL | `https://sandbox.local/my-project` |
+| Admin URL | `https://sandbox.local/my-project/wp-admin/` |
+| Administrator | `admin` / `123` |
+| Site and administrator email | `admin@my-project.com` |
+| Search engine indexing | Enabled |
+
+The parent home URL is forced to HTTPS and the normalized folder is appended.
+Database credentials come from the parent configuration. The new configuration
+gets fresh authentication salts, its own database name, and environment type
+`local`. Existing databases and destination folders are never overwritten.
+
+### Default blueprint on a new environment
+
+If `wp` is absent, the CLI downloads official WordPress core matching the parent
+installation's version into `ROOT/local-sandqube/blueprints/wp/site`. This first
+use needs internet access and Local's WP-CLI. Existing `wp` blueprints are
+preserved. A missing custom blueprint is an error; it is not downloaded.
+
+### Custom blueprints and SQL imports
+
+A blueprint must contain a full WordPress installation in `site/`, with
+`wp-config.php` or `wp-config-sample.php`. Quote names with spaces:
+
+```sh
+npx local-sandqube create-site my_project "Custom Blueprint"
+```
+
+- Without `db/db.sql`, the CLI installs a fresh database.
+- With `db/db.sql`, the CLI imports it instead. Its table prefix must match the
+  blueprint configuration. Use a single-site table export without `USE` or
+  database-level `CREATE`, `ALTER`, or `DROP` statements. `create-blueprint`
+  produces the expected format.
+
+Imported content, plugin/theme settings, and permalink structure are preserved.
+The generated title, database name, HTTPS URLs, email, `admin` / `123` login,
+and indexing setting override imported values. An existing `admin` account is
+updated; otherwise the first administrator is renamed while retaining its ID
+and post authorship, or an administrator is created if none exists. Other
+imported users are retained.
+
+URL migration reads the old stored `home` and `siteurl` values and performs one
+serialization-aware replacement across the new database. HTTP, HTTPS,
+protocol-relative, and JSON-escaped forms are handled, including options,
+metadata, GUIDs, and plugin tables. Rewrite rules regenerate on the next normal
+request using the preserved permalink structure.
+
+Normal plugins and themes are skipped during setup; must-use plugins still
+run. Installation and administrator-change notification emails are skipped.
+Failures trigger cleanup of only the newly created database and folder; a
+failed database cleanup is reported for manual recovery.
+
+## 3. Create a blueprint
+
+```sh
+npx local-sandqube create-blueprint my-project my-template
+```
+
+| Argument | Required? | Meaning |
+| --- | --- | --- |
+| `SITE_DIRECTORY` | Yes | Exact name of an installed WordPress folder directly inside `ROOT/app/public`. |
+| `BLUEPRINT_NAME` | Yes | New, unique directory name in this root's blueprint storage. |
+| `--root PATH` | No | Target Local site; otherwise the current terminal directory. |
+
+Names are used exactly as supplied. Use the source **folder** name (for example
+`my-project`), not its database name (`my_project`). Names are single directory
+components, not paths; `.` and `..` are rejected. Existing names, even empty
+directories, are rejected. Quote names with spaces:
+
+```sh
+npx local-sandqube create-blueprint my-project "Project Template"
+```
+
+The resulting blueprint contains `site/` with all WordPress files, including
+hidden files, uploads, plugins, themes, and configuration, and `db/db.sql` with
+all tables from the source site's configured database. Symlinked files and
+directories are copied as real files so the blueprint is self-contained.
+
+Keep the source idle during capture: file copying and export happen in sequence.
+InnoDB data is exported in a transaction without table locks. Source files,
+database contents, and existing blueprints are preserved. An incomplete new
+blueprint is removed if copying or export fails.
+
+Restore it with a new database name:
+
+```sh
+npx local-sandqube create-site second_project my-template
+```
+
+## Complete workflow
+
+1. Run `npx local-sandqube setup`, then stop and start the environment in Local.
+2. Run `npx local-sandqube create-site demo_project`.
+3. Customize the new site through its printed URL.
+4. Run `npx local-sandqube create-blueprint demo-project demo-template`.
+5. Run `npx local-sandqube create-site second_project demo-template`.
+
+Before publishing, substitute `node local-sandqube/bin/local-sandqube.js` or the
+local `npx --package=...` form for `npx local-sandqube` in these examples.
+
+## Mailpit and Local controls
+
+Subsites share the selected environment's PHP service and Mailpit inbox. Standard
+`wp_mail()` uses the inherited PHP mail transport. Open **Tools > Mailpit** in
+Local to inspect messages. An SMTP or email API plugin may use another transport.
+Local's Open Site, WP Admin, and one-click login controls target the parent
+installation; open the subsite URLs directly.
+
+## Development and packaging
+
+From the package directory:
+
+```sh
+npm test
+npm pack --dry-run
+npm pack
+```
+
+The package contains only the CLI, Nginx templates, PHP helpers, metadata, and
+this README. No user blueprint files or database dumps are distributed.
+The standalone shell version is maintained separately in
+[`../local-sandqube-sh`](../local-sandqube-sh/README.md); it does not require Node.js.
+
+The current package license is `UNLICENSED`; choose the intended license and
+confirm the npm package name before publishing. Publishing is a separate step
+and has not been performed. After reviewing the tarball and signing into your
+npm account, a future release can be published from this directory:
+
+```sh
+npm publish
+```
+
+## Help and troubleshooting
+
+```sh
+npx local-sandqube --help
+npx local-sandqube create-site --help
+npx local-sandqube create-blueprint --help
+npx local-sandqube setup --help
+npx local-sandqube --version
+```
+
+| Problem | Action |
+| --- | --- |
+| Bare `npx local-sandqube` is unavailable before publishing | Use the local package, tarball, or direct Node invocation above. |
+| Not a Local site root | Run from the folder containing `app/` and `conf/`, or pass `--root PATH`. |
+| Missing PHP, WP-CLI, MySQL, or mysqldump | Start the selected Local site and use its Site shell, or check `app/.envrc`. |
+| Database unavailable | Check that Local is running and the source configuration uses the correct database. |
+| Existing database, folder, or blueprint | Choose a new name; these resources are not overwritten. |
+| Missing custom blueprint | Capture one using `create-blueprint`, or prepare its `site/` directory. |
+| Invalid dump or table prefix | Export a matching single-site blueprint with `create-blueprint`. |
+| Unexpected subsite 404s | Run `setup`, then stop and start the selected Local site. |
+| HTTPS is untrusted | Trust the environment's certificate using Local's SSL controls. |

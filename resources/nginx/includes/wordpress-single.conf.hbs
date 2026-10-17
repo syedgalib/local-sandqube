@@ -1,0 +1,20 @@
+# WordPress single blog rules.
+# Designed to be included in any server {} block.
+
+# This order might seem weird - this is attempted to match last if rules below fail.
+# http://wiki.nginx.org/HttpCoreModule
+location / {
+	try_files $uri $uri/ @wordpress;
+}
+
+# Independent installations directly below public, with the root installation
+# as the fallback. A rewrite preserves the original query string and method.
+location @wordpress {
+	if (-f $document_root$wordpress_directory/wp-load.php) {
+		rewrite ^ $wordpress_directory/index.php last;
+	}
+	rewrite ^ /index.php last;
+}
+
+# Add trailing slash to */wp-admin requests.
+rewrite ^(.*)(wp-admin)$ $1$2/ permanent;
